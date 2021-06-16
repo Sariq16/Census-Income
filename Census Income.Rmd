@@ -1,0 +1,440 @@
+---
+title: "CensusIncome"
+author: "Sariq Sahazada"
+date: "02/01/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+# INTRODUCTION:
+
+This is a part of HarvardX PH125.9x Data Science: Capstone course as a Final Project. In this project we will  build a model that will predict if the income of any individual in the US is greater than or less than USD 50,000 based on the data available about that individual.
+
+This Census Income dataset was collected by Barry Becker in 1994 and given to the public site (http://archive.ics.uci.edu/ml/datasets/Census+Income). This data set will help you understand how the income of a person varies depending on various factors such as the education background, occupation, marital status, geography, age, number of working hours/week, etc.
+
+```{r, echo= TRUE}
+#Loading Necessary Library:
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+if(!require(gridExtra)) install.packages("gridExtra", repos = "http://cran.us.r-project.org")
+```
+
+
+# IMPORTING THE DATA:
+
+```{r, echo = TRUE}
+train_file = "adult.data"; test_file = "adult.test"
+ 
+if (!file.exists (train_file))
+download.file (url = "http://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data",
+destfile = train_file)
+ 
+if (!file.exists (test_file))
+download.file (url = "http://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.test",
+destfile = test_file)
+
+```
+
+If you take a look at the training data, you’ll notice that the predictor variables are not labelled. Therefore, in the below code, I’ve assigned variable names to each predictor variable and to make the data more readable, I’ve gotten rid of unnecessary white spaces.
+
+```{r, echo=TRUE}
+#Assigning column names
+colNames = c ("age", "workclass", "fnlwgt", "education",
+"educationnum", "maritalstatus", "occupation",
+"relationship", "race", "sex", "capitalgain",
+"capitalloss", "hoursperweek", "nativecountry",
+"incomelevel")
+ 
+#Reading training data
+train_set = read.table (train_file, header = FALSE, sep = ",",
+strip.white = TRUE, col.names = colNames,
+na.strings = "?", stringsAsFactors = TRUE)
+#Reading testing data
+test_set = read.table (test_file, header = FALSE, sep = ",",
+strip.white = TRUE, col.names = colNames,
+na.strings = "?", fill = TRUE, stringsAsFactors = TRUE)
+test_set$age = as.integer(as.character(test_set$age))
+test_set = na.omit(test_set) 
+
+```
+
+Now in order to study the structure of our data sets, we call the str() method. This gives us a descriptive summary of all the predictor variables present in the data set:
+
+```{r}
+#Display structure of the data
+str(train_set)
+str(test_set)
+```
+
+
+# DATA WRANGLING:
+
+The data wrangling stage is considered to be one of the most time-consuming tasks in Data Science. This stage includes removing NA values, getting rid of redundant variables and any inconsistencies in the data.
+
+We'll begin the data wrangling by checking if our data observations have any missing values:
+
+```{r}
+table(complete.cases(train_set))
+table(complete.cases(test_set))
+```
+
+The above code indicates that 2399 sample cases have NA values. In order to fix this, let’s look at the summary of all our variables and analyze which variables have the greatest number of null values. The reason why we must get rid of NA values is that they lead to wrongful predictions and hence decrease the accuracy of our model.
+
+```{r}
+summary(train_set[!complete.cases(train_set),])
+```
+
+From the above summary, it is observed that three variables have a good amount of NA values:
+
+Workclass = 1836
+Occupation = 1843
+Nativecountry = 583
+
+These three variables must be cleaned since they are significant variables for predicting the income level of an individual.
+
+```{r}
+#Removing NAs
+train_set = train_set[!is.na (train_set$workclass) & !is.na (train_set$occupation), ]
+train_set = train_set[!is.na (train_set$nativecountry), ]
+
+test_set= test_set[!is.na (test_set$workclass) & !is.na (test_set$occupation), ]
+test_set= test_set[!is.na (test_set$nativecountry), ]
+```
+
+Once we’ve gotten rid of the NA values, our next step is to get rid of any unnecessary variable that isn’t essential for predicting our outcome. It is important to get rid of such variables because they only increase the complexity of the model without improving its efficiency.
+
+One such variable is the ‘fnlwgt’ variable, which denotes the population totals derived from CPS by calculating “weighted tallies” of any particular socio-economic characteristics of the population.
+
+This variable is removed from our data set since it does not help to predict our resultant variable:
+
+```{r}
+#Removing unnecessary variables
+ 
+train_set$fnlwgt = NULL
+test_set$fnlwgt = NULL
+```
+
+# DATA VISUALIZATION:
+
+Data Visualization involves analyzing each feature variable to check if the variables are significant for building the model.
+
+```{r}
+#Data Visualization
+#Visualizing the age variable
+ 
+summary (train_set$age)
+#Boxplot for age variable
+boxplot (age ~ incomelevel, data = train_set,
+main = "Income based on the Age of an individual",
+xlab = "Income", ylab = "Age", col = "salmon")
+```
+
+```{r}
+#Histogram for age variable
+incomeBelow50K = (train_set$incomelevel == "<=50K")
+xlimit = c (min (train_set$age), max (train_set$age))
+ylimit = c (0, 1600)
+ 
+hist1 = qplot(age, data = train_set[incomeBelow50K,], margins = TRUE,
+binwidth = 2, xlim = xlimit, ylim = ylimit, colour = incomelevel)
+ 
+hist2 = qplot(age, data = train_set[!incomeBelow50K,], margins = TRUE,
+binwidth = 2, xlim = xlimit, ylim = ylimit, colour = incomelevel)
+ 
+grid.arrange(hist1, hist2, nrow = 2)
+
+```
+
+The above illustrations show that the age variable is varying with the level of income and hence it is a strong predictor variable.
+
+## Visualizing the ‘educationnum’ variable:
+
+This variable denotes the number of years of education of an individual. Let’s see how the ‘educationnum’ variable varies with respect to the income levels:
+
+```{r}
+summary (train_set$educationnum)
+#Boxplot for education-num variable
+boxplot (educationnum ~ incomelevel, data = train_set,
+main = "Years of Education distribution for different income levels",
+xlab = "Income", ylab = "Years of Education", col = "green")
+```
+
+The above illustration depicts that the ‘educationnum’ variable varies for income levels <=50k and >50k, thus proving that it is a significant variable for predicting the outcome.
+
+## Visualizing capital-gain and capital-loss variable:
+
+After studying the summary of the capital-gain and capital-loss variable for each income level, it is clear that their means vary significantly, thus indicating that they are suitable variables for predicting the income level of an individual.
+
+```{r}
+summary (train_set[train_set$incomelevel == "<=50K", 
+                        c("capitalgain", "capitalloss")])
+```
+
+## Exploring hours/week variable:
+
+Similarly, the ‘hoursperweek’ variable is evaluated to check if it is a significant predictor variable.
+
+```{r}
+summary (train_set$hoursperweek)
+boxplot (hoursperweek ~ incomelevel, data = train_set,
+main = "Hours Per Week distribution for different income levels",
+xlab = "Income", ylab = "Hours Per Week", col = "salmon")
+```
+
+The boxplot shows a clear variation for different income levels which makes it an important variable for predicting the outcome.
+
+Similarly, we’ll be evaluating categorical variables as well. In the below section I’ve created qplots for each variable and after evaluating the plots, it is clear that these variables are essential for predicting the income level of an individual.
+
+## Exploring work-class variable:
+
+```{r}
+#Evaluating work-class variable
+qplot (incomelevel, data = train_set, fill = workclass) + facet_grid (. ~ workclass)
+```
+
+```{r}
+#Evaluating occupation variable
+qplot (incomelevel, data = train_set, fill = occupation) + facet_grid (. ~ occupation)
+```
+
+```{r}
+#Evaluating marital-status variable
+qplot (incomelevel, data =train_set, fill = maritalstatus) + facet_grid (. ~ maritalstatus)
+```
+
+```{r}
+#Evaluating relationship variable
+qplot (incomelevel, data = train_set, fill = relationship) + facet_grid (. ~ relationship)
+```
+
+All these graphs show that these set of predictor variables are significant for building our predictive model.
+
+# BUILDING MODEL:
+
+So, after evaluating all our predictor variables, it is finally time to perform Predictive analytics. In this stage, we’ll build a predictive model that will predict whether an individual earns above USD 50,000 or not based on the predictor variables that we evaluated in the previous section.
+
+To build this model I’ve made use of the boosting and Random Forest algorithm since we have to classify an individual into either of the two classes, i.e:
+
+Income level <= USD 50,000
+
+Income level > USD 50,000
+
+```{r, echo=TRUE}
+#Building the model: Boosting
+
+set.seed (32323, sample.kind = "Rounding")
+ 
+trCtrl = trainControl(method = "cv", number = 10)
+ 
+boostFit = train(incomelevel ~ age + workclass + education + educationnum +
+maritalstatus + occupation + relationship +
+race + capitalgain + capitalloss + hoursperweek +
+nativecountry, trControl = trCtrl,
+method = "gbm", data = train_set, verbose = FALSE)
+
+```
+
+Checking the Accuracy.
+
+```{r}
+confusionMatrix(train_set$incomelevel, predict (boostFit, train_set))
+```
+
+```{r, echo=TRUE}
+#Building the model: Random Forest
+
+set.seed(14, sample.kind = "Rounding")
+train_rf <- train(incomelevel ~ age + workclass + education + educationnum +
+                  maritalstatus + occupation + relationship +
+                  race + capitalgain + capitalloss + hoursperweek +
+                  nativecountry, method = "rf", ntree = 10,
+                  tuneGrid = data.frame(mtry = seq(1:5)), 
+                  data = train_set)
+```
+
+Cheching the Accuracy
+    
+```{r}
+confusionMatrix (train_set$incomelevel, predict(train_rf, train_set))
+```
+
+# TESTING THE MODEL:
+
+Since with Boosting algorithm we got the highest accuracy. The test data is applied to the predictive model to validate the efficiency of the model.
+
+```{r}
+#Testing model
+test_set$predicted = predict(boostFit, test_set)
+table(test_set$incomelevel, test_set$predicted)
+ 
+actuals_preds <- data.frame(cbind(actuals=test_set$incomelevel, predicted=test_set$predicted)) # make actuals_predicteds dataframe.
+correlation_accuracy <- cor(actuals_preds)
+head(actuals_preds)
+```
+
+Defining RMSE i.e. Root Mean Square Error
+
+```{r}
+
+# Defining RMSE:
+RMSE <- function(true, predicted){
+  sqrt(mean((true - predicted)^2))
+}
+```
+
+Now calculating the RMSE:
+
+```{r}
+RMSE(actuals_preds$actuals, actuals_preds$predicted)
+```
+
+# CONCLUSION:
+
+From the RMSEs and Accuracy of models, we can see that Boosting Algorithm improved the accuracy of the prediction.
+
+US Census Income is a classical dataset which represents a challenge for development of better machine learning algorithm. In this project, the Random Forest model only gives an accuracy of 85%, and the Boosting model could improved it to 86%. In conclusion, Boosting algorithm appears to be a very powerful technique. The Ensemble method should also be considered in the future to apply on the US Census Income data set, in order to combine the advantages of various models and enhance the overall performance of prediction.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
